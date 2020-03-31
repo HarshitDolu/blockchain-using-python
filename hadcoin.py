@@ -1,24 +1,32 @@
 #create a blockchain
 #postman and flask
+#install pip install requests==2.18.4
 
 #import libraries
 import datetime
 import hashlib
 import json
-from flask import Flask,jsonify
+from flask import Flask,jsonify,request
+import requests
+from uuid import uuid4
+from urllib.parse import urlparse
 
 # part -1 building a blockchain
 class blockchain:
     def __init__(self):
         self.chain=[]
+        self.transactions=[]
         self.create_block(proof=1,prev_hash='0')
+        self.nodes=set()
         
     def create_block(self,proof,prev_hash):
         block={'index':len(self.chain)+1,
                'Timestamp':str(datetime.datetime.now()),
               'proof':proof,
               'previous_hash':prev_hash,
+              'transactions':self.transactions
               }
+        self.transactions=[]
         self.chain.append(block)
         return block
     def get_prev_block(self):
@@ -54,11 +62,39 @@ class blockchain:
             prev_block=block
             block_index+=1
         return True
+    def add_transactions(self,sender,reciever,amount):
+        self.transactions.append({
+            'sender':sender,'reciever':reciever,'amount':amount})
+        previous_block=self.get_prev_block();
+        return previous_block['index']+1
+    def add_node(self,address):
+        parsed_url=urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+    
+    def replace_chain(self):
+        network=self.nodes
+        longest_chain=None
+        max_length=len(self.chain)
+        for node in network:
+            response=requests.get(f'http://{node}/get_chain')
+            if response.status_code==200:
+                length=response.json()['length']
+                chain=response.json()['chain']
+                if length>max_length and self.is_chain_valid(chain):
+                    max_length=length
+                    longest_chain=chain
+        if longest_chain:
+            self.chain=longest_chain
+            return True
+        return False
     
 #part 2-Mining our blockchain
 #creating a web app
     
 app=Flask(__name__)
+
+node_address=str(uuid4()).replace('-','')
+
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
 bchain=blockchain() 
@@ -70,11 +106,15 @@ def mine_block():
     proof=bchain.proof_of_work(previous_proof)
     previous_hash=bchain.hash(previous_block)
     block=bchain.create_block(proof,previous_hash)
+    
+    bchain.add_transactions(sender=node_address,reciever='Harshit',amount=1)
+    
     response={'message':'Congratulations you just mined a block!',
               'index':block['index'],
               'timestamp':block['Timestamp'],
               'proof':block['proof'],
-              'previous_hash':block['previous_hash']}
+              'previous_hash':block['previous_hash'],
+              'transactions':block['transactions']}
     return jsonify(response),200
 
 #get full chain
@@ -95,6 +135,40 @@ def get_chain():
     #else:
      #   response={'message':'Blockchain is not valid'}
     #return jsonify(response),200
+
+@app.route('/add_transaction',methods=['POST'])
+def add_transaction():
+    json=request.get_json()
+    transaction_keys=['sender','receiver','amount']
+    if not all (key in json for key in transaction_keys):
+        return 'some elements are missing',400
+    index=bchain.add_transactions(json['sender'],json['receiver'],json['amount'])
+    response={'message':f'this transaction will be added to block {index}'}
+    return jsonify(response), 201
+
+@app.route('/connect_node',methods=['POST'])
+def connect_node():
+    json=request.get_json()
+    nodes=json.get['nodes']
+    if nodes is None:
+        return "No node",400
+    for node in nodes:
+        bchain.add_node(node)
+    response={'message':'All the nodes are now connected.Total_nodes:',
+              'total_nodes':list(bchain.nodes)}
+    return jsonify(response), 201
+
+
+@app.route('/replace_chain',methods=['GET'])
+def replace_chain():
+    is_chain_replaced=bchain.replace_chain()
+    if is_chain_replaced:
+        response={'message':'the chain has replaced with longest chain',
+                  'new_chain':bchain.chain}
+    else:
+        response={'message':'All good ! your chain is the longest chain in the network',
+                  'actual_chain':bchain.chain}
+    return jsonify(response), 200
 
 #running app
 app.run(host= '0.0.0.0',port=5000)
