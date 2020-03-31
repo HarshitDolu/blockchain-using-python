@@ -9,4 +9,4 @@ and added cryptocurrency named -hadcoin(my own currency).
 this will provide great visualization of blockchain terminologies like: mining,timestamp,transactions.
 
 I have installed requests==2.18.4
-used urlparser,uuid4 to create node address
+used urlparser, uuid4 to create node address and used json files to post the request
